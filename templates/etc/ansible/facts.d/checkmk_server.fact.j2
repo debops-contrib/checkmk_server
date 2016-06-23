@@ -1,3 +1,11 @@
-{
-"ssh_publickey": "{{ checkmk_server_register_ssh_pubkey.stdout }}"
-}
+{% set _site_filter = checkmk_server__site_base + "/*" %}
+{% set _site_facts = {} %}
+{% for _site in _site_filter | fileglob %}
+{%   set _site_name = _site | replace(checkmk_server__site_base + "/", "") %}
+{%   set _site_pubkey = _site + "/.ssh/id_rsa.pub" %}
+{%   set _pubkey = lookup("pipe", "test -f " + _site_pubkey + " && cat " + _site_pubkey + " || true") %}
+{%   if _pubkey %}
+{%     set _ = _site_facts.update({_site_name: {'ssh_publickey': _pubkey}}) %}
+{%   endif %}
+{% endfor %}
+{{ _site_facts | to_nice_json }}
