@@ -16,7 +16,7 @@
 - name: Create Check_MK site
   command: omd create '{{ checkmk_server__site }}'
   args:
-    creates: '/omd/sites/{{ checkmk_server__site }}/etc/omd/site.conf'
+    creates: '{{ checkmk_server__site_base }}/{{ checkmk_server__site }}/etc/omd/site.conf'
 
 - name: Get Check_MK site version
   command: omd version '{{ checkmk_server__site }}'
@@ -121,12 +121,6 @@
     mode: '0644'
   when: checkmk_server__sshkeys|d() and
         "publickey_file" in checkmk_server__sshkeys|d()
-
-- name: Read SSH public key
-  command: 'cat {{ checkmk_server__site_home }}/.ssh/id_rsa.pub'
-  changed_when: False
-  register: checkmk_server_register_ssh_pubkey
-  when: checkmk_server__sshkeys|d()
 
 - name: Generate multisite permission roles definition
   template:

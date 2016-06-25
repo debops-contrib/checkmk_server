@@ -1,5 +1,8 @@
 ---
 
+# Check_MK site base
+checkmk_server__site_base: '/opt/omd/sites'
+
 # Check_MK site user name (mustn't exist before creating the site)
 checkmk_server__user: '{{ checkmk_server__site }}'
 
@@ -7,7 +10,7 @@ checkmk_server__user: '{{ checkmk_server__site }}'
 checkmk_server__group: '{{ checkmk_server__site }}'
 
 # Check_MK site chroot directory
-checkmk_server__site_home: '/opt/omd/sites/{{ checkmk_server__site }}'
+checkmk_server__site_home: '{{ checkmk_server__site_base }}/{{ checkmk_server__site }}'
 
 # User properties used for user definition in users.mk
 checkmk_server__user_properties: [ 'alias', 'automation_secret', 'connector',

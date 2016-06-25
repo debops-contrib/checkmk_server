@@ -6,9 +6,9 @@
     state: restarted
 
 - name: Reload Check_MK configuration
-  command: '/omd/sites/{{ checkmk_server__site }}/bin/cmk --reload'
+  command: '{{ checkmk_server__site_base }}/{{ checkmk_server__site }}/bin/cmk --reload'
   environment:
-    OMD_ROOT: '/omd/sites/{{ checkmk_server__site }}'
+    OMD_ROOT: '{{ checkmk_server__site_base }}/{{ checkmk_server__site }}'
 
 - name: Reload apache2
   service:
