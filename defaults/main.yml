@@ -19,10 +19,11 @@
 checkmk_server__version: '1.2.8p25'
 
                                                                    # ]]]
-# .. envvar:: checkmk_server__version_label [[[
+# .. envvar:: checkmk_server__version_suffix [[[
 #
-# Check_MK version label used with the :command:`omd` tool.
-checkmk_server__version_label: '{{ checkmk_server__version }}.cre'
+# Check_MK version suffix to :envvar:`checkmk_server__version` used with the
+# :command:`omd` tool.
+checkmk_server__version_suffix: '.cre'
 
                                                                    # ]]]
 # .. envvar:: checkmk_server__site_update [[[
@@ -37,66 +38,17 @@ checkmk_server__site_update: False
 # Custom patches to apply after installing Check_MK package
 checkmk_server__patches:
   - patch: 'check-mk-raw-1.2.8-set-https-proxy-header.patch'
-    file: '/omd/versions/{{ checkmk_server__version_label }}/skel/etc/apache/apache-own.conf'
+    file: '/omd/versions/{{ checkmk_server__version }}{{ checkmk_server__version_suffix }}/skel/etc/apache/apache-own.conf'
   - patch: 'check-mk-raw-1.2.8p4-read-X-Forwarded-Port-header.patch'
-    file: '/omd/versions/{{ checkmk_server__version_label }}/skel/etc/apache/conf.d/omd.conf'
-
-                                                                   # ]]]
-# .. envvar:: checkmk_server__ferm_dependent_rules [[[
-#
-# Firewall configuration using the debops.ferm_ Ansible role.
-checkmk_server__ferm_dependent_rules: '{{
-    checkmk_server__ferm_web_rules +
-    (checkmk_server__ferm_livestatus_rules if checkmk_server__multisite_livestatus else [])
-  }}'
-                                                                   # ]]]
-
-# .. envvar:: checkmk_server__ferm_web_rules [[[
-#
-# Firewall configuration for WATO Web access.
-checkmk_server__ferm_web_rules:
-  - type: 'accept'
-    dport: '{{ [ "http", "https" ] if checkmk_server__pki else [ "http" ] }}'
-    saddr: '{{ checkmk_server__web_allow }}'
-    accept_any: True
-    weight: '40'
-    role: 'checkmk_server'
-
-                                                                   # ]]]
-# .. envvar:: checkmk_server__ferm_livestatus_rules [[[
-#
-# Firewall configuration for Multisite Livestatus access.
-checkmk_server__ferm_livestatus_rules:
-  - type: 'accept'
-    dport: [ '{{ checkmk_server__livestatus_port|string }}' ]
-    saddr: '{{ checkmk_server__livestatus_allow }}'
-    accept_any: True
-    weight: '40'
-    role: 'checkmk_server'
-
-                                                                   # ]]]
-# .. envvar:: checkmk_server__web_allow [[[
-#
-# List of IP addresses or network CIDR ranges allowed to connect to the
-# Check_MK Web interface. If list is empty, anyone can connect.
-checkmk_server__web_allow: []
+    file: '/omd/versions/{{ checkmk_server__version }}{{ checkmk_server__version_suffix }}/skel/etc/apache/conf.d/omd.conf'
 
                                                                    # ]]]
 # .. envvar:: checkmk_server__livestatus_allow [[[
 #
 # List of IP addresses or network CIDR ranges allowed to connect to the
-# Check_MK Livestatus TCP socket. If list is empty, anyone can connect.
+# Check_MK Livestatus TCP socket of every site running on this host. By default
+# only the master of each site is allowed to connect.
 checkmk_server__livestatus_allow: []
-
-                                                                   # ]]]
-# .. envvar:: checkmk_server__etc_services__dependent_list [[[
-#
-# Add entry for Livestatus to :file:`/etc/services` using the
-# ``debops.etc_services`` role.
-checkmk_server__etc_services__dependent_list:
-  - name: 'check-mk-livestatus'
-    port: '{{ checkmk_server__livestatus_port }}'
-    comment: 'Check_MK server Livestatus'
 
                                                                    # ]]]
 # .. envvar:: checkmk_server__livestatus_port [[[
@@ -138,22 +90,20 @@ checkmk_server__prerequisite_packages: [ 'apache2', 'python-passlib' ]
 checkmk_server__site: 'debops'
 
                                                                    # ]]]
-# .. envvar:: checkmk_server__hostname [[[
+# .. envvar:: checkmk_server__fqdn [[[
 #
 # Set Check_MK server DNS hostname (e. g. for agent download, API calls, ...).
-# FIXME: Rename to checkmk_server__fqdn.
-checkmk_server__hostname: '{{ ansible_local.core.fqdn
-                              if (ansible_local|d() and ansible_local.core|d() and
-                                  ansible_local.core.fqdn|d())
-                              else ansible_fqdn }}'
+checkmk_server__fqdn: '{{ ansible_local.core.fqdn
+                          if (ansible_local|d() and ansible_local.core|d() and
+                              ansible_local.core.fqdn|d())
+                          else ansible_fqdn }}'
 
                                                                    # ]]]
 # .. envvar:: checkmk_server__site_url [[[
 #
 # Check_MK server site URL.
 checkmk_server__site_url: '{{ ("https://" if checkmk_server__pki else "http://") +
-                               checkmk_server__hostname + "/" +
-                               checkmk_server__site
+                               checkmk_server__fqdn + "/" + checkmk_server__site
                               if checkmk_server__site|d() else "" }}'
 
                                                                    # ]]]
@@ -171,11 +121,10 @@ checkmk_server__webapi_url: '{{ checkmk_server__site_url + "/check_mk/webapi.py"
 # :ref:`checkmk_server__ref_omd_config` for more details.
 checkmk_server__omd_config: '{{
     checkmk_server__omd_config_email +
-    checkmk_server__omd_config_core +
-    (checkmk_server__omd_config_livestatus if checkmk_server__multisite_livestatus|d() else [])
+    checkmk_server__omd_config_core
   }}'
-                                                                   # ]]]
 
+                                                                   # ]]]
 # .. envvar:: checkmk_server__omd_config_email [[[
 #
 # Administrator email address set via OMD.
@@ -190,16 +139,6 @@ checkmk_server__omd_config_email:
 checkmk_server__omd_config_core:
   - var: 'CORE'
     value: 'icinga'
-
-                                                                   # ]]]
-# .. envvar:: checkmk_server__omd_config_livestatus [[[
-#
-# Livestatus service configuration via OMD.
-checkmk_server__omd_config_livestatus:
-  - var: 'LIVESTATUS_TCP'
-    value: 'on'
-  - var: 'LIVESTATUS_TCP_PORT'
-    value: '{{ checkmk_server__livestatus_port }}'
 
                                                                    # ]]]
 # .. envvar:: checkmk_server__sshkeys [[[
@@ -235,20 +174,6 @@ checkmk_server__ssh_arguments: '-o BatchMode=yes -o StrictHostKeyChecking=no -o 
 # Multisite Web Configuration [[[
 # -------------------------------
 
-# .. envvar:: checkmk_server__multisite_slave [[[
-#
-# Indicate if this site is a distributed monitoring slave which receives the
-# Check_MK configuration from another Check_MK server instance.
-checkmk_server__multisite_slave: False
-
-                                                                   # ]]]
-# .. envvar:: checkmk_server__multisite_livestatus [[[
-#
-# Enable multisite Livestatus service. This is required for distributed
-# monitoring of this site.
-checkmk_server__multisite_livestatus: '{{ True if checkmk_server__multisite_slave|d() else False }}'
-
-                                                                   # ]]]
 # .. envvar:: checkmk_server__multisite_config_path [[[
 #
 # Configuration path for Check_MK multisite configurations. Relative to the
@@ -392,11 +317,11 @@ checkmk_server__multisite_users: '{{ checkmk_server__multisite_debops_users |
 checkmk_server__multisite_debops_users:
   ansible:
     alias: 'Automation User used by Ansible'
-    automation_secret: '{{ lookup("password", secret + "/credentials/" + ansible_fqdn + "/checkmk_server/" + checkmk_server__site + "/ansible/secret") }}'
+    automation_secret: '{{ lookup("password", secret + "/credentials/" + inventory_hostname + "/checkmk_server/" + checkmk_server__site + "/ansible/secret") }}'
     roles: [ 'api' ]
   sitesync:
     alias: 'Synchronization User for Multisite'
-    password: '{{ lookup("password", secret + "/credentials/" + ansible_fqdn + "/checkmk_server/" + checkmk_server__site + "/sitesync/password") }}'
+    password: '{{ lookup("password", secret + "/credentials/" + inventory_hostname + "/checkmk_server/" + checkmk_server__site + "/sitesync/password") }}'
     roles: [ 'admin' ]
 
                                                                    # ]]]
@@ -450,32 +375,35 @@ checkmk_server__multisite_user_connection_defaults:
 #
 # Distributed monitoring sites configuration. For more details see
 # :ref:`checkmk_server__ref_distributed_sites`
-checkmk_server__distributed_sites: {}
+checkmk_server__distributed_sites: []
+#  name: site_name
+#  inventory_host: slavehost
+#  tls
+
+                                                                   # ]]]
+# .. envvar:: checkmk_server__sites [[[
+#
+# List of expanded sites configuration used for distributed sites setup.
+checkmk_server__sites: '{{ lookup("template", "lookup/checkmk_server__sites.j2", convert_data=False) | from_yaml }}'
 
                                                                    # ]]]
 # .. envvar:: checkmk_server__distributed_sites_defaults [[[
 #
 # Default sites properties for distributed monitoring.
 checkmk_server__distributed_sites_defaults:
-  username: 'sitesync'
-  password: '{{ lookup("password", secret + "/credentials/" + ansible_fqdn + "/checkmk_server/" + checkmk_server__site + "/sitesync/password") }}'
-  disabled: False
-  disable_wato: True
-  insecure: False
-  multisiteurl: ''
-  persist: False
-  replicate_ec: False
-  replicate_mkps: True
-  replication: ''
-  status_host: None
-  timeout: 10
-  url_prefix: ''
-  user_login: True
-                                                                   # ]]]
-                                                                   # ]]]
-# Monitoring Rules [[[
-# --------------------
+  multisite_username: 'sitesync'
+  #password: '{{ lookup("password", secret + "/credentials/" + ansible_fqdn + "/checkmk_server/" + checkmk_server__site + "/sitesync/password") }}'
+  multisite_disable_wato: True
+  multisite_insecure: False
+  multisite_persist: False
+  multisite_replicate_ec: False
+  multisite_replicate_mkps: True
+  multisite_replication: 'slave'
+  multisite_status_host: None
+  multisite_timeout: 10
+  multisite_user_login: True
 
+                                                                   # ]]]
 # .. envvar:: checkmk_server__site_config_path [[[
 #
 # Configuration path for Check_MK main configurations. Relative to the site's
@@ -632,63 +560,62 @@ checkmk_server__site_cfg_netif_description:
 checkmk_server__site_packages: []
                                                                    # ]]]
                                                                    # ]]]
-# PKI Configuration [[[
-# ---------------------
+# Configuration for other Ansible roles [[[
+# -----------------------------------------
 
-# .. envvar:: checkmk_server__pki [[[
+# .. envvar:: checkmk_server__apache__dependent_vhosts [[[
 #
-# Enable or disable support for HTTPS in Check_MK server (using
-# debops.pki_).
-checkmk_server__pki: '{{ (True
-                          if (ansible_local|d() and ansible_local.pki|d() and
-                              ansible_local.pki.enabled|d() | bool)
-                          else False) | bool }}'
-
-                                                                   # ]]]
-# .. envvar:: checkmk_server__pki_path [[[
-#
-# Base path for PKI directory.
-checkmk_server__pki_path: '{{ ansible_local.pki.path
-                              if (ansible_local|d() and ansible_local.pki|d() and
-                                  ansible_local.pki.path|d())
-                              else "/etc/pki/realms" }}'
+# Configuration for the debops.apache_ Ansible role. By default it will create
+# a dedicated Apache virtual host which includes the reverse proxy
+# configuration files provided by the `check-mk-raw` upstream package.
+checkmk_server__apache__dependent_vhosts:
+  - name: '{{ checkmk_server__fqdn }}'
+    include: [ '/omd/apache/*.conf' ]
+    by_role: 'debops-contrib.checkmk_server'
 
                                                                    # ]]]
-# .. envvar:: checkmk_server__pki_realm [[[
+# .. envvar:: checkmk_server__apache__dependent_snippets [[[
 #
-# Default PKI realm used by Check_MK server.
-checkmk_server__pki_realm: '{{ ansible_local.pki.realm
-                               if (ansible_local|d() and ansible_local.pki|d() and
-                                   ansible_local.pki.realm|d())
-                               else "domain" }}'
+# Configuration for the debops.apache_ Ansible role. By default it will disable
+# The Apache configuration snippet which is installed by the `check-mk-raw`
+# upstream package.
+checkmk_server__apache__dependent_snippets:
+  'zzz_omd':
+    enabled: False
+    type: 'dont-create'
 
                                                                    # ]]]
-# .. envvar:: checkmk_server__pki_ca [[[
+# .. envvar:: checkmk_server__etc_services__dependent_list [[[
 #
-# Root CA certificate, relative to :envvar:`checkmk_server__pki_realm`.
-checkmk_server__pki_ca: 'CA.crt'
+# Configuration for the debops.etc_services_ Ansible role. If this is a slave
+# server this might be generated by the master site, therefore read it
+# from the Ansible facts by default.
+checkmk_server__etc_services__dependent_list: '{{ (ansible_local.checkmk_server.values()
+                                                   | map(attribute="dependent_vars.etc_services__dependent_list")
+                                                   | list)
+                                                  if ansible_local.checkmk_server|d() else [] }}'
 
                                                                    # ]]]
-# .. envvar:: checkmk_server__pki_crt [[[
+# .. envvar:: checkmk_server__ferm__dependent_rules [[[
 #
-# Host certificate, relative to :envvar:`checkmk_server__pki_realm`.
-checkmk_server__pki_crt: 'default.crt'
+# Configuration for the debops.ferm_ Ansible role. If this is a slave
+# server this might be generated by the master site, therefore read it
+# from the Ansible facts by default.
+checkmk_server__ferm__dependent_rules: '{{ (ansible_local.checkmk_server.values()
+                                            | map(attribute="dependent_vars.ferm__dependent_rules")
+                                            | list)
+                                           if ansible_local.checkmk_server|d() else [] }}'
 
                                                                    # ]]]
-# .. envvar:: checkmk_server__pki_key [[[
+# .. envvar:: checkmk_server__users__dependent_accounts [[[
 #
-# Host private key, relative to :envvar:`checkmk_server__pki_realm`.
-checkmk_server__pki_key: 'default.key'
-
-                                                                   # ]]]
-# .. envvar:: checkmk_server__tls_options [[[
-#
-# Additional Apache mod_ssl options. Valid configuration keys:
-# ``SSLCipherSuite``, ``SSLHonorCipherOrder``, ``SSLProtocols``,
-# ``SSLStrictSNIVHostCheck``
-checkmk_server__tls_options:
-  SSLHonorCipherOrder: 'On'
-  SSLCipherSuite: 'ECDH+AESGCM:DH+AESGCM:ECDH+AES256:DH+AES256:ECDH+AES128:DH+AES:ECDH+3DES:DH+3DES:RSA+AESGCM:RSA+AES:RSA+3DES:!aNULL:!MD5:!DSS'
+# Configuration for the debops.users_ Ansible role. If this is a slave
+# server this might be generated by the master site, therefore read it
+# from the Ansible facts by default.
+checkmk_server__users__dependent_accounts: '{{ (ansible_local.checkmk_server.values()
+                                                | map(attribute="dependent_vars.users__dependent_accounts")
+                                                | list)
+                                               if ansible_local.checkmk_server|d() else [] }}'
                                                                    # ]]]
                                                                    # ]]]
                                                                    # ]]]

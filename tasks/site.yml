@@ -1,185 +1,80 @@
 ---
 # vim: foldmarker=[[[,]]]:foldmethod=marker
 
+# IMPORTANT:
+# These tasks are run for each Check_MK site defined
+# in `checkmk_server__sites`. This means they can run multiple
+# times per server. If the monitoring site is a remote slave,
+# they might even run on a different server. The site configuration
+# is available through `site_item`.
+
 # Check_MK site configuration [[[1
-- name: Get Check_MK default version
-  stat:
-    path: '/omd/versions/default'
-  register: checkmk_server_register_default
-  always_run: True
+- name: Site configuration via omd
+  block:
 
-- name: Set new default version
-  command: omd setversion '{{ checkmk_server__version_label }}'
-  ignore_errors: '{{ ansible_check_mode }}'
-  when: (checkmk_server_register_default.stat.lnk_source |
-         basename) != checkmk_server__version_label
+  - name: Get Check_MK site version
+    command: omd version '{{ site_item.name }}'
+    register: checkmk_server__register_site_version
+    changed_when: False
+    check_mode: no
 
-- name: Create Check_MK site
-  command: omd create '{{ checkmk_server__site }}'
-  args:
-    creates: '/omd/sites/{{ checkmk_server__site }}/etc/omd/site.conf'
+  - name: Trigger site version update
+    set_fact:
+      checkmk_server__fact_update: '{{ site_item.update and
+                                       ((checkmk_server__register_site_version.stdout.split(" ")[-1] | splitext)[0] |
+                                        version_compare(site_item.version, "<")) }}'
+    check_mode: no
 
-- name: Get Check_MK site version
-  command: omd version '{{ checkmk_server__site }}'
-  register: checkmk_server_register_site_version
-  changed_when: False
-  always_run: True
-  ignore_errors: '{{ ansible_check_mode }}'
+  - name: Check cron.allow file
+    stat:
+      path: '/etc/cron.allow'
+    register: checkmk_server__register_cron
 
-- name: Trigger site version update
-  set_fact:
-    checkmk_server__fact_update: True
-  always_run: True
-  ignore_errors: '{{ ansible_check_mode }}'
-  when: checkmk_server__site_update|bool and
-        ((checkmk_server_register_site_version.stdout.split(" ")[-1] | splitext)[0] |
-         version_compare(checkmk_server__version, "<"))
+  - name: Grant cron permissions to Check_MK user
+    lineinfile:
+      dest: '/etc/cron.allow'
+      line: '{{ site_item.user }}'
+      regexp: '^{{ site_item.user }}$'
+    when: checkmk_server__register_cron.stat.exists
+    notify: [ 'Restart Check_MK' ]
 
-- name: Check cron.allow file
-  stat:
-    path: '/etc/cron.allow'
-  register: checkmk_server_register_cron
+  - name: Query OMD configuration
+    command: omd config '{{ site_item.name }}' show '{{ item.var }}'
+    with_items: '{{ site_item.omd_config }}'
+    register: checkmk_server__register_omd_config
+    changed_when: False
+    check_mode: no
 
-- name: Grant cron permissions to Check_MK user
-  lineinfile:
-    dest: '/etc/cron.allow'
-    line: '{{ checkmk_server__user }}'
-    regexp: '^{{ checkmk_server__user }}$'
-  when: checkmk_server_register_cron.stat.exists
-  notify: [ 'Restart Check_MK' ]
+  - name: Shutdown Check_MK site (if required)
+    command: omd stop '{{ site_item.name }}'
+    when: (not (item.item.value|string) == item.stdout) or
+          checkmk_server__fact_update|d(False)
+    with_items: '{{ checkmk_server__register_omd_config.results
+                    if not "failed" in checkmk_server__register_omd_config else [] }}'
+    register: checkmk_server__register_omd_stop
 
-- name: Query OMD configuration
-  command: omd config '{{ checkmk_server__site }}' show '{{ item.var }}'
-  with_items: '{{ checkmk_server__omd_config }}'
-  register: checkmk_server__register_omd_config
-  changed_when: False
-  always_run: True
-  ignore_errors: '{{ ansible_check_mode }}'
+  - name: Run Check_MK site update
+    command: omd --force update '{{ site_item.name }}'
+    when: checkmk_server__fact_update|d(False)
 
-- name: Shutdown Check_MK site (if required)
-  command: omd stop '{{ checkmk_server__site }}'
-  when: (not (item.item.value|string) == item.stdout) or
-        checkmk_server__fact_update|d(False)
-  with_items: '{{ checkmk_server__register_omd_config.results
-                  if not "failed" in checkmk_server__register_omd_config else [] }}'
-  register: checkmk_server__register_omd_stop
+  - name: Set OMD site properties
+    command: omd config '{{ site_item.name }}' set '{{ item.item.var }}' '{{ item.item.value }}'
+    when: not item.stdout == (item.item.value|string)
+    with_items: '{{ checkmk_server__register_omd_config.results
+                    if not "failed" in checkmk_server__register_omd_config else [] }}'
 
-- name: Run Check_MK site update
-  command: omd --force update '{{ checkmk_server__site }}'
-  ignore_errors: '{{ ansible_check_mode }}'
-  when: checkmk_server__fact_update|d(False)
+  - name: Enable Check_MK service
+    service:
+      name: 'check-mk-raw-{{ site_item.version
+                             if checkmk_server__fact_update|d()
+                             else (checkmk_server__register_site_version.stdout.split(" ")[-1] | splitext)[0] }}'
+      enabled: yes
+    ignore_errors: '{{ ansible_check_mode }}'
 
-- name: Set OMD site properties
-  command: omd config '{{ checkmk_server__site }}' set '{{ item.item.var }}' '{{ item.item.value }}'
-  when: not item.stdout == (item.item.value|string)
-  with_items: '{{ checkmk_server__register_omd_config.results
-                  if not "failed" in checkmk_server__register_omd_config else [] }}'
+  - name: Start Check_MK site (if required)
+    command: omd start '{{ site_item.name }}'
+    when: checkmk_server__register_omd_stop | changed
 
-- name: Enable Check_MK service
-  service:
-    name: 'check-mk-raw-{{ checkmk_server__version if checkmk_server__fact_update|d() else (checkmk_server_register_site_version.stdout.split(" ")[-1] | splitext)[0] }}'
-    enabled: yes
-  ignore_errors: '{{ ansible_check_mode }}'
-
-- name: Start Check_MK site (if required)
-  command: omd start '{{ checkmk_server__site }}'
-  when: checkmk_server__register_omd_stop | changed
-
-- name: Create .ssh directory
-  file:
-    path: '{{ checkmk_server__site_home }}/.ssh'
-    state: directory
-    owner: '{{ checkmk_server__user }}'
-    group: '{{ checkmk_server__group }}'
-    mode: '0700'
-  when: checkmk_server__sshkeys|d()
-
-- name: Generate SSH keypair
-  command: 'ssh-keygen {{ "-b " + checkmk_server__sshkeys.keysize if "keysize" in checkmk_server__sshkeys else "-b 4096" }} -f {{ checkmk_server__site_home }}/.ssh/id_rsa -N ""'
-  args:
-    creates: '{{ checkmk_server__site_home }}/.ssh/id_rsa'
-  when: checkmk_server__sshkeys|d() and
-        ("generate_keypair" in checkmk_server__sshkeys|d() and
-         checkmk_server__sshkeys.generate_keypair)
-
-- name: Fix SSH keypair ownership
-  file:
-    path: '{{ checkmk_server__site_home }}/.ssh/{{ item }}'
-    owner: '{{ checkmk_server__user }}'
-    group: '{{ checkmk_server__group }}'
-  ignore_errors: '{{ ansible_check_mode }}'
-  with_items: [ 'id_rsa', 'id_rsa.pub' ]
-  when: checkmk_server__sshkeys|d() and
-        ("generate_keypair" in checkmk_server__sshkeys|d() and
-         checkmk_server__sshkeys.generate_keypair)
-
-- name: Copy SSH private key
-  copy:
-    src: '{{ checkmk_server__sshkeys.privatekey_file }}'
-    dest: '{{ checkmk_server__site_home }}/.ssh/id_rsa'
-    owner: '{{ checkmk_server__user }}'
-    group: '{{ checkmk_server__group }}'
-    mode: '0600'
-  when: checkmk_server__sshkeys|d() and
-        "privatekey_file" in checkmk_server__sshkeys|d()
-
-- name: Copy SSH public key
-  copy:
-    src: '{{ checkmk_server__sshkeys.publickey_file }}'
-    dest: '{{ checkmk_server__site_home }}/.ssh/id_rsa.pub'
-    owner: '{{ checkmk_server__user }}'
-    group: '{{ checkmk_server__group }}'
-    mode: '0644'
-  when: checkmk_server__sshkeys|d() and
-        "publickey_file" in checkmk_server__sshkeys|d()
-
-- name: Read SSH public key
-  command: 'cat {{ checkmk_server__site_home }}/.ssh/id_rsa.pub'
-  changed_when: False
-  ignore_errors: '{{ ansible_check_mode }}'
-  register: checkmk_server__register_ssh_public_key
-  when: checkmk_server__sshkeys|d()
-
-- name: Query installed Check_MK packages
-  command: mkp list
-  become_user: '{{ checkmk_server__user }}'
-  become_flags: '-i'
-  changed_when: False
-  always_run: True
-  register: checkmk_server__register_mkp
-  tags:
-    - 'role::checkmk_server:mkp'
-
-- name: Download Check_MK packages
-  get_url:
-    url: '{{ item.url }}'
-    dest: '{{ checkmk_server__site_home }}/tmp'
-    checksum: '{{ item.checksum|d(omit) }}'
-  when: ('url' in item) and
-        (item.name not in checkmk_server__register_mkp.stdout_lines)
-  register: checkmk_server__register_mkp_download
-  with_items: '{{ checkmk_server__site_packages }}'
-  tags:
-    - 'role::checkmk_server:mkp'
-
-- name: Upload Check_MK packages
-  copy:
-    src: '{{ item.path }}'
-    dest: '{{ checkmk_server__site_home }}/tmp'
-  when: ('path' in item) and
-        (item.name not in checkmk_server__register_mkp.stdout_lines)
-  register: checkmk_server__register_mkp_upload
-  with_items: '{{ checkmk_server__site_packages }}'
-  tags:
-    - 'role::checkmk_server:mkp'
-
-- name: Install Check_MK packages
-  command: mkp install '{{ item.dest|d() }}'
-  become_user: '{{ checkmk_server__user }}'
-  become_flags: '-i'
-  when: not (item | skipped)
-  with_flattened:
-    - '{{ checkmk_server__register_mkp_download.results }}'
-    - '{{ checkmk_server__register_mkp_upload.results }}'
-  tags:
-    - 'role::checkmk_server:mkp'
+  # delegate block
+  delegate_to: '{{ site_item.delegate_to
+                   if (not site_item.delegate_to == inventory_hostname) else omit }}'

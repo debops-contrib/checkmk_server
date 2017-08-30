@@ -1,10 +1,50 @@
+{#
+ # Create a facts file containing the sites hosted on the involved host.
+ #
+ # Distributed slaves sites are defined in the inventory of the master server,
+ # therefore it may happen, that the facts file is merged from multiple
+ # configuration sources (inventory from master host and local facts from
+ # slave host).
+ #
+ # Sites which are about to be deleted must not be listed in the resulting
+ # facts file.
+ #}
 {% set _site_facts = {} %}
-{% if checkmk_server__site|d() %}
-{%   set _ = _site_facts.update({checkmk_server__site: {"version": checkmk_server__version_label}}) %}
-{%   set _ = _site_facts[checkmk_server__site].update({"site_url": checkmk_server__site_url}) %}
-{%   set _ = _site_facts[checkmk_server__site].update({"webapi_url": checkmk_server__webapi_url}) %}
-{%   if checkmk_server__register_ssh_public_key.stdout|d() %}
-{%     set _ = _site_facts[checkmk_server__site].update({"ssh_public_key": checkmk_server__register_ssh_public_key.stdout}) %}
+{% if (site_item.delegate_to in hostvars) and
+      ('ansible_local' in hostvars[site_item.delegate_to]) and
+      ('checkmk_server' in hostvars[site_item.delegate_to].ansible_local) and
+      hostvars[site_item.delegate_to].ansible_local.checkmk_server %}
+{#
+ # Site currently handled was defined before
+ #}
+{%   set _cmk_server_facts = hostvars[site_item.delegate_to].ansible_local.checkmk_server %}
+{%   for _local_site in _cmk_server_facts.keys() %}
+{%     if _local_site == site_item.name %}
+{#
+ # Site is not meant to be removed
+ #}
+{%       if site_item.state|d('present') != 'absent' %}
+{#
+ # Add the SSH public key if found as fact
+ #}
+{%         if checkmk_server__register_ssh_public_key|d() and
+              'stdout' in checkmk_server__register_ssh_public_key and
+              checkmk_server__register_ssh_public_key.stdout | length > 0 %}
+{%           set _ = site_item.update({'ssh_public_key': checkmk_server__register_ssh_public_key.stdout}) %}
+{%         endif %}
+{#
+ # Update site configuration
+ #}
+{%         set _ = _site_facts.update({_local_site: (_cmk_server_facts[_local_site] | combine(site_item, recursive=True))}) %}
+{%       endif %}
+{%     endif %}
+{%   endfor %}
+{#
+ # No local facts found
+ #}
+{% else %}
+{%   if site_item.state|d('present') != 'absent' %}
+{%     set _ = _site_facts.update({site_item.name: site_item}) %}
 {%   endif %}
 {% endif %}
 {{ _site_facts | to_nice_json }}

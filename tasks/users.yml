@@ -1,78 +1,97 @@
 ---
 # vim: foldmarker=[[[,]]]:foldmethod=marker
 
-# Read existing Check_MK configuration [[[1
-- name: Wait for the site to be started
-  wait_for:
-    path: '{{ checkmk_server__site_home }}/{{ checkmk_server__multisite_config_path }}/wato/users.mk'
-    timeout: 60
+# Check if distributed site is already initialized [[[1
+- name: Check distributed site state
+  stat:
+    path: '{{ site_item.home }}/{{ checkmk_server__site_config_path }}/distributed_wato.mk'
+  register: checkmk_server__register_distributed_wato_mk
+  delegate_to: '{{ site_item.delegate_to
+                   if (not site_item.delegate_to == inventory_hostname) else omit }}'
 
-- name: Read local multisite users definition
-  command: 'sed -e "1,/^multisite_users\s*=/d" {{ checkmk_server__site_home }}/{{ checkmk_server__multisite_config_path }}/wato/users.mk'
-  register: checkmk_server__register_users_mk
-  changed_when: False
-  always_run: True
-  ignore_errors: '{{ ansible_check_mode }}'
-  tags: [ 'role::checkmk_server:multisite' ]
+- name: Configure local multisite users
+  block:
 
-- name: Read local contacts definition
-  command: 'sed -e "1,/^contacts.update(/d" -e "$d" {{ checkmk_server__site_home }}/{{ checkmk_server__site_config_path }}/wato/contacts.mk'
-  register: checkmk_server__register_contacts_mk
-  changed_when: False
-  always_run: True
-  ignore_errors: '{{ ansible_check_mode }}'
-  tags: [ 'role::checkmk_server:multisite' ]
+  # Read existing Check_MK configuration [[[1
+  - name: Wait for the site to be started
+    wait_for:
+      path: '{{ site_item.home }}/{{ checkmk_server__multisite_config_path }}/wato/users.mk'
+      timeout: 60
 
-- name: Set local Check_MK configuration facts
-  set_fact:
-    checkmk_server__fact_local_users: '{{ checkmk_server__register_users_mk.stdout
-                                          if checkmk_server__register_users_mk.stdout|length > 0
-                                          else {} }}'
-    checkmk_server__fact_local_contacts: '{{ checkmk_server__register_contacts_mk.stdout
-                                             if checkmk_server__register_contacts_mk.stdout|length > 0
-                                             else {} }}'
-  always_run: True
-  tags: [ 'role::checkmk_server:multisite' ]
+  - name: Read local multisite users definition
+    command: 'sed -e "1,/^multisite_users\s*=/d" {{ site_item.home }}/{{ checkmk_server__multisite_config_path }}/wato/users.mk'
+    register: checkmk_server__register_users_mk
+    changed_when: False
+    check_mode: no
 
+  - name: Read local contacts definition
+    command: 'sed -e "1,/^contacts.update(/d" -e "$d" {{ site_item.home }}/{{ checkmk_server__site_config_path }}/wato/contacts.mk'
+    register: checkmk_server__register_contacts_mk
+    changed_when: False
+    check_mode: no
 
-# Check_MK Multisite authentication [[[1
-- name: Set local httpd user passwords
-  htpasswd:
-    path: '{{ checkmk_server__site_home }}/etc/htpasswd'
-    name: '{{ item }}'
-    password: '{{ checkmk_server__multisite_users[item]["password"]
-                  if "password" in checkmk_server__multisite_users[item]
-                  else checkmk_server__multisite_users[item]["automation_secret"] }}'
-    crypt_scheme: md5_crypt
-  ignore_errors: '{{ ansible_check_mode }}'
-  when: ("password" in checkmk_server__multisite_users[item]) or
-        ("automation_secret" in checkmk_server__multisite_users[item])
-  with_items: '{{ checkmk_server__multisite_users|d({})|list }}'
-  tags: [ 'role::checkmk_server:multisite' ]
+  - name: Set local Check_MK configuration facts
+    set_fact:
+      checkmk_server__fact_local_users: '{{ checkmk_server__register_users_mk.stdout
+                                            if checkmk_server__register_users_mk.stdout|length > 0
+                                            else {} }}'
+      checkmk_server__fact_local_contacts: '{{ checkmk_server__register_contacts_mk.stdout
+                                               if checkmk_server__register_contacts_mk.stdout|length > 0
+                                               else {} }}'
+    check_mode: no
 
-- name: Create Web directory for Multisite users
-  file:
-    path: '{{ checkmk_server__site_home }}/var/check_mk/web/{{ item }}'
-    state: directory
-    owner: '{{ checkmk_server__user }}'
-    group: '{{ checkmk_server__group }}'
-    mode: '0770'
-  with_items: '{{ checkmk_server__multisite_users|d({})|list }}'
+  # Check_MK multisite authentication [[[1
+  - name: Set local httpd user passwords
+    htpasswd:
+      path: '{{ site_item.home }}/etc/htpasswd'
+      name: '{{ item }}'
+      password: '{{ checkmk_server__multisite_users[item]["password"]
+                    if "password" in checkmk_server__multisite_users[item]
+                    else checkmk_server__multisite_users[item]["automation_secret"] }}'
+      crypt_scheme: md5_crypt
+    when: ("password" in checkmk_server__multisite_users[item]) or
+          ("automation_secret" in checkmk_server__multisite_users[item])
+    with_items: '{{ checkmk_server__multisite_users|d({})|list }}'
 
-- name: Create automation.secret
-  template:
-    src: 'var/check_mk/web/user/automation.secret.j2'
-    dest: '{{ checkmk_server__site_home }}/var/check_mk/web/{{ item }}/automation.secret'
-    owner: '{{ checkmk_server__user }}'
-    group: '{{ checkmk_server__group }}'
-    mode: '0660'
-  when: ("automation_secret" in checkmk_server__multisite_users[item])
-  with_items: '{{ checkmk_server__multisite_users|d({})|list }}'
+  - name: Create Web directory for multisite users
+    file:
+      path: '{{ site_item.home }}/var/check_mk/web/{{ item }}'
+      state: directory
+      owner: '{{ site_item.user }}'
+      group: '{{ site_item.group }}'
+      mode: '0770'
+    with_items: '{{ checkmk_server__multisite_users|d({})|list }}'
 
-- name: Generate Check_MK Multisite user definitions
-  template:
-    src: 'etc/check_mk/multisite.d/wato/users.mk.j2'
-    dest: '{{ checkmk_server__site_home }}/{{ checkmk_server__multisite_config_path }}/wato/users.mk'
-    owner: '{{ checkmk_server__user }}'
-    group: '{{ checkmk_server__group }}'
-    mode: '0660'
+  - name: Create automation.secret
+    template:
+      src: 'var/check_mk/web/user/automation.secret.j2'
+      dest: '{{ site_item.home }}/var/check_mk/web/{{ item }}/automation.secret'
+      owner: '{{ site_item.user }}'
+      group: '{{ site_item.group }}'
+      mode: '0660'
+    when: ("automation_secret" in checkmk_server__multisite_users[item])
+    with_items: '{{ checkmk_server__multisite_users|d({})|list }}'
+
+  - name: Generate Check_MK multisite user definitions
+    template:
+      src: 'etc/check_mk/multisite.d/wato/users.mk.j2'
+      dest: '{{ site_item.home }}/{{ checkmk_server__multisite_config_path }}/wato/users.mk'
+      owner: '{{ site_item.user }}'
+      group: '{{ site_item.group }}'
+      mode: '0660'
+
+  rescue:
+    - name: Print current site configuration
+      debug:
+        var: site_item
+
+  # Only run this block if the site is either a local master site or a slave
+  # site which hasn't been synchronized yet
+  when: (site_item.connection|d('remote') == 'local') or
+        (('multisite_replication' in site_item.keys() and
+          site_item.multisite_replication == 'slave') and
+         (not checkmk_server__register_distributed_wato_mk.stat.exists))
+
+  # Delegate tasks to server of current site item
+  delegate_to: '{{ site_item.delegate_to
+                   if (not site_item.delegate_to == inventory_hostname) else omit }}'

@@ -1,0 +1,23 @@
+---
+# IMPORTANT:
+# These tasks are run for each Check_MK site defined
+# in `checkmk_server__sites`. This means they can run multiple
+# times per server. If the monitoring site is a remote slave,
+# they might even run on a different server. The site configuration
+# is available through `site_item`.
+
+- name: Synchronize multisite configuration to slave sites
+  become_user: '{{ site_item.master_site }}'
+  command: 'rsync --archive --verbose --rsh="ssh -o BatchMode=yes -o StrictHostKeyChecking=no" {{ checkmk_server__site_home }}/{{ item }}/. {{ site_item.user }}@{{ site_item.fqdn }}:{{ site_item.home }}/{{ item }}/'
+  delegate_to: '{{ site_item.master_delegate_to }}'
+  with_items:
+    - [ '{{ checkmk_server__multisite_config_path }}/wato', '{{ checkmk_server__site_config_path }}/wato' ]
+  register: checkmk_server__register_site_sync
+  changed_when: ('stdout_lines' in checkmk_server__register_site_sync) and
+                (checkmk_server__register_site_sync.stdout_lines | length > 4)
+
+- name: Reload slave site configuration
+  command: '{{ site_item.home }}/bin/cmk --reload'
+  environment:
+    OMD_ROOT: '/omd/sites/{{ site_item.name }}'
+  delegate_to: '{{ site_item.delegate_to }}'

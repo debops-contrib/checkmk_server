@@ -1,140 +1,44 @@
 ---
 # vim: foldmarker=[[[,]]]:foldmethod=marker
 
-- name: Install prerequisite packages
-  apt:
-    name: '{{ item }}'
-    state: present
-  with_items: '{{ checkmk_server__prerequisite_packages }}'
+- name: Manage SSH keys for monitoring and site synchronization
+  include: ssh.yml
 
-- name: Check check-mk-raw package version
-  shell: dpkg-query -W -f='${Version}\n' check-mk-raw-{{ checkmk_server__version }} | cut -d- -f1
-  register: checkmk_server_register_version
-  changed_when: False
-  failed_when: False
-  always_run: True
-
-- name: Download Check_MK RAW package
-  get_url:
-    url: '{{ checkmk_server__raw_package }}'
-    dest: '/var/cache/apt/archives/{{ checkmk_server__raw_package | basename }}'
-  register: checkmk_server_register_download
-  when: (not checkmk_server_register_version.stdout) and
-        (checkmk_server__raw_package | match('^http'))
-
-- name: Install local Check_MK RAW package
-  apt:
-    deb: '{{ ("/var/cache/apt/archives/" + (checkmk_server__raw_package | basename))
-             if checkmk_server_register_download|d()
-             else checkmk_server__raw_package }}'
-    state: present
-  ignore_errors: '{{ ansible_check_mode }}'
-  register: checkmk_server_register_deb_install
-  when: (not checkmk_server_register_version.stdout) and
-        ((checkmk_server__raw_package | splitext)[1] == '.deb')
-
-- name: Install Check_MK RAW package from repository
-  apt:
-    name: '{{ checkmk_server__raw_package }}'
-    state: present
-  register: checkmk_server_register_apt_install
-  when: (not checkmk_server_register_version.stdout) and
-        (not checkmk_server_register_deb_install|d())
-
-- name: Apply patches
-  patch:
-    src: '{{ item.patch }}'
-    dest: '{{ item.file }}'
-    basedir: '/'
-  ignore_errors: '{{ ansible_check_mode }}'
-  with_items: '{{ checkmk_server__patches }}'
-  when: (checkmk_server_register_apt_install | changed) or
-        (checkmk_server_register_deb_install | changed)
-
-- name: Set TLS options
-  template:
-    src: 'etc/apache2/mods-available/ssl.conf.j2'
-    dest: '/etc/apache2/mods-available/ssl.conf'
-    owner: 'root'
-    group: 'root'
-    mode: '0644'
-  when: checkmk_server__pki|d(False)
-  notify: [ 'Reload apache2' ]
-
-- name: Check apache2 mod_headers status
-  stat:
-    path: '/etc/apache2/mods-enabled/headers.load'
-  register: checkmk_server_register_mod_headers
-  changed_when: False
-  always_run: True
-
-- name: Enable apache2 mod_headers
-  command: 'a2enmod headers'
-  when: not checkmk_server_register_mod_headers.stat.exists
-  notify: [ 'Reload apache2' ]
-
-- name: Check apache2 mod_ssl status
-  stat:
-    path: '/etc/apache2/mods-enabled/ssl.load'
-  register: checkmk_server_register_mod_ssl
-  changed_when: False
-  always_run: True
-
-- name: Enable apache2 mod_ssl
-  command: '{{ item }}'
-  with_items:
-    - 'a2enmod ssl'
-    - 'a2ensite default-ssl'
-  when: checkmk_server__pki|d(False) and not checkmk_server_register_mod_ssl.stat.exists
-  notify: [ 'Reload apache2' ]
-
-- name: Disable apache2 mod_ssl
-  command: '{{ item }}'
-  with_items:
-    - 'a2dismod ssl'
-    - 'a2dissite default-ssl'
-  when: not checkmk_server__pki|d(False) and checkmk_server_register_mod_ssl.stat.exists
-  notify: [ 'Reload apache2' ]
-
-- name: Manage Check_MK site
+- name: Manage Check_MK sites
   include: site.yml
-  when: checkmk_server__site|d()
-
-- name: Check distributed site state
-  stat:
-    path: '{{ checkmk_server__site_home }}/{{ checkmk_server__site_config_path }}/distributed_wato.mk'
-  register: checkmk_server__multisite_distributed_wato_mk
+  with_items: '{{ checkmk_server__sites }}'
+  loop_control:
+    loop_var: site_item
 
 - name: Monitoring site user authentication
   include: users.yml
-  when: checkmk_server__site|d() and
-        ((checkmk_server__multisite_slave|d() and
-          not checkmk_server__multisite_distributed_wato_mk.stat.exists) or
-         not checkmk_server__multisite_slave|d())
+  with_items: '{{ checkmk_server__sites }}'
+  loop_control:
+    loop_var: site_item
+  tags:
+    - 'role::checkmk_server:multisite'
+    - 'role::checkmk_server:users'
+
+- name: Trigger reload/restart handlers
+  meta: flush_handlers
+
+- name: Login on distributed sites
+  include: login.yml
+  when: (checkmk_server__sites | length) > 1
+  tags:
+    - 'role::checkmk_server:login'
 
 - name: Manage WATO and monitoring rules
   include: wato.yml
-  when: not checkmk_server__multisite_slave|d()
+  when: (checkmk_server__sites | length) > 0
 
-- name: Make sure that local fact directory exists
-  file:
-    dest: '/etc/ansible/facts.d'
-    state: 'directory'
-    owner: 'root'
-    group: 'root'
-    mode: '0755'
-
-- name: Save Check_MK server local facts
-  template:
-    src: 'etc/ansible/facts.d/checkmk_server.fact.j2'
-    dest: '/etc/ansible/facts.d/checkmk_server.fact'
-    owner: 'root'
-    group: 'root'
-    mode: '0644'
-  register: checkmk_server_register_local_facts
-  when: checkmk_server__sshkeys|d()
-
-- name: Gather facts if they were modified
-  action: setup
-  when: checkmk_server_register_local_facts|d() and
-        (checkmk_server_register_local_facts | changed)
+- name: Upload configuration to slave sites
+  include: sync.yml
+  when: ('multisite_replication' in site_item) and
+        (site_item.multisite_replication == 'slave')
+  with_items: '{{ checkmk_server__sites }}'
+  loop_control:
+    loop_var: site_item
+  tags:
+    - role::checkmk_server:rules
+    - role::checkmk_server:multisite

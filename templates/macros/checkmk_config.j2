@@ -279,7 +279,7 @@ if {{ _name }} == None:
 {% macro tmpl_format__dict_multiline(_dict)
 %}{{ _dict | pprint |
      replace("  '", " '") |
-     replace("u'None'", "None") |
+     replace("'None'", "None") |
      replace("u''", "''") |
      regex_replace("([\[\{])u'", "\\1'") |
      regex_replace("(: )u'", "\\1'") |

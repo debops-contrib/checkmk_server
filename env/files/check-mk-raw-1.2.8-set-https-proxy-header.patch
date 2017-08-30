@@ -1,5 +1,5 @@
 Author: Reto Gantenbein <reto.gantenbein@linuxmonk.ch>
-Date:   Tue Jun 21 06:51:23 2016 +0200
+Date:   Tue May 8 17:57:28 2017 +0200
 
     Set X-Forwarded headers when accessed via HTTPS
 
@@ -14,15 +14,21 @@ Date:   Tue Jun 21 06:51:23 2016 +0200
     %{SERVER_PORT} in in the X-Forwarded-Port header
     failed because it seemed to be undefined "(null)".
 
+    v2: - Guard 'RequestHeader' statements with
+          <IfModule> to avoid errors if mod_headers
+          is not (yet) enabled
+
 --- /omd/versions/default/skel/etc/apache/apache-own.conf.orig  2016-05-13 19:19:07.000000000 +0200
-+++ /omd/versions/default/skel/etc/apache/apache-own.conf       2016-06-21 06:50:03.169171120 +0200
-@@ -11,6 +11,10 @@
++++ /omd/versions/default/skel/etc/apache/apache-own.conf       2017-05-08 17:56:25.342383031 +0200
+@@ -11,6 +11,12 @@
    ProxyRequests Off
    ProxyPreserveHost On
  
 +  # Indicate when the site was accessed via HTTPS
++  <IfModule mod_headers.c>
 +  RequestHeader set X-Forwarded-Proto https env=HTTPS
 +  RequestHeader set X-Forwarded-Port 443 env=HTTPS
++  </IfModule>
 +
    # Include file created by 'omd config', which 
    # sets the TCP port of the site local webserver

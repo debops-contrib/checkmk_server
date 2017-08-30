@@ -1,0 +1,40 @@
+---
+
+- name: Login on remote site
+  uri:
+    url: '{{ item.multisite_url }}/login.py'
+    method: POST
+    body: '{{ [ "_login=1",
+                "_username=" + item.multisite_username,
+                "_password=" + item.multisite_password,
+                "_origtarget=automation_login.py",
+                "_plain_error=1" ] | join("&") }}'
+    force_basic_auth: yes
+    user: '{{ item.multisite_username }}'
+    password: '{{ item.multisite_password }}'
+    status_code: 302
+    validate_certs: '{{ not item.multisite_insecure|bool }}'
+  register: checkmk_server__register_multisite_login
+  when: (not item.connection|d('remote') == 'local')
+  with_items: '{{ checkmk_server__sites }}'
+
+- name: Get Multisite distribution secrets
+  uri:
+    url: '{{ item.location }}'
+    HEADER_Cookie: '{{ item.set_cookie }}'
+    return_content: True
+    validate_certs: '{{ item.invocation.module_args.validate_certs }}'
+  register: checkmk_server__register_multisite_automation_login
+  no_log: True
+  when: not item | skipped
+  with_items: '{{ checkmk_server__register_multisite_login.results
+                  if "results" in checkmk_server__register_multisite_login else [] }}'
+
+- name: Generate distributed sites configuration
+  template:
+    src: 'etc/check_mk/multisite.d/sites.mk.j2'
+    dest: '{{ item.home }}/{{ checkmk_server__multisite_config_path }}/sites.mk'
+    owner: '{{ item.user }}'
+    group: '{{ item.group }}'
+  when: (item.connection|d('remote') == 'local')
+  with_items: '{{ checkmk_server__sites }}'

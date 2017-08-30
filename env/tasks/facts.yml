@@ -1,0 +1,34 @@
+---
+#
+# Set site facts so that later tasks can depend on it
+#
+# IMPORTANT:
+# These tasks are run for each Check_MK site defined
+# in `checkmk_server__sites`. This means they can run multiple
+# times per server. If the monitoring site is a remote slave,
+# they might even run on a different server. The site configuration
+# is available through `site_item`.
+
+- name: Persist site facts
+  block:
+
+  - name: Make sure that local fact directory exists
+    file:
+      dest: '/etc/ansible/facts.d'
+      state: 'directory'
+      owner: 'root'
+      group: 'root'
+      mode: '0755'
+
+  - name: Save Check_MK server local facts
+    template:
+      src: 'etc/ansible/facts.d/checkmk_server.fact.j2'
+      dest: '/etc/ansible/facts.d/checkmk_server.fact'
+      owner: 'root'
+      group: 'root'
+      mode: '0644'
+    register: checkmk_server__register_local_facts
+
+  # Delegate entire block to corresponding host
+  delegate_to: '{{ site_item.delegate_to
+                   if (not site_item.delegate_to == inventory_hostname) else omit }}'

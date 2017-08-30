@@ -1,0 +1,43 @@
+---
+# IMPORTANT:
+# These tasks are run for each Check_MK site defined
+# in `checkmk_server__sites`. This means they can run multiple
+# times per server. If the monitoring site is a remote slave,
+# they might even run on a different server. The site configuration
+# is available through `site_item`.
+
+- name: Upload and read SSH key
+  block:
+
+  - name: Create .ssh directory
+    file:
+      path: '{{ site_item.home }}/.ssh'
+      state: directory
+      owner: '{{ site_item.user }}'
+      group: '{{ site_item.group }}'
+      mode: '0700'
+    when: ('sshkeys' in site_item) and site_item.sshkeys
+
+  - name: Copy SSH private key
+    copy:
+      src: '{{ site_item.sshkeys.privatekey_file }}'
+      dest: '{{ site_item.home }}/.ssh/id_rsa'
+      owner: '{{ site_item.user }}'
+      group: '{{ site_item.group }}'
+      mode: '0600'
+    when: ('sshkeys' in site_item) and
+          site_item.sshkeys.privatekey_file|d(False)
+
+  - name: Copy SSH public key
+    copy:
+      src: '{{ site_item.sshkeys.publickey_file }}'
+      dest: '{{ site_item.home }}/.ssh/id_rsa.pub'
+      owner: '{{ site_item.user }}'
+      group: '{{ site_item.group }}'
+      mode: '0644'
+    when: ('sshkeys' in site_item) and
+          site_item.sshkeys.publickey_file|d(False)
+
+  # delegate block
+  delegate_to: '{{ site_item.delegate_to
+                   if (not site_item.delegate_to == inventory_hostname) else omit }}'

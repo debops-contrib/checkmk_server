@@ -7,7 +7,7 @@ checkmk_server__user: '{{ checkmk_server__site }}'
 checkmk_server__group: '{{ checkmk_server__site }}'
 
 # Check_MK site chroot directory
-checkmk_server__site_home: '/opt/omd/sites/{{ checkmk_server__site }}'
+checkmk_server__site_home: '/omd/sites/{{ checkmk_server__site }}'
 
 # User properties used for user definition in users.mk
 checkmk_server__user_properties: [ 'alias', 'automation_secret', 'connector',
@@ -105,7 +105,13 @@ checkmk_server__multisite_variable_map:
 # user_connections.mk
 checkmk_server__ansible_user_connections_properties: [ 'binddn', 'bindpw' ]
 
-# Distributed monitoring properties for local site
-checkmk_server__local_site_properties: [ 'disable_wato', 'disabled',
+# Distributed sites properties for local site in sites.mk
+checkmk_server__local_site_properties: [ 'alias', 'disable_wato', 'disabled',
   'insecure', 'multisiteurl', 'persist', 'replicate_ec', 'replication',
   'timeout', 'user_login' ]
+
+# Distributed sites properties for remote sites in sites.mk
+checkmk_server__remote_site_properties: [ 'alias', 'disable_wato', 'disabled',
+  'insecure', 'multisiteurl', 'persist', 'replicate_ec', 'replicate_mkps',
+  'replication', 'socket', 'status_host', 'timeout', 'url_prefix',
+  'user_login' ]

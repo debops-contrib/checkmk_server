@@ -6,16 +6,30 @@
 
   roles:
 
+    - role: debops.apache/env
+      tags: [ 'role::apache', 'role::apache:env' ]
+
+    - role: debops-contrib.checkmk_server/env
+      tags: [ 'role::checkmk_server', 'role::checkmk_server:env' ]
+
     - role: debops.etc_services
       tags: [ 'role::etc_services' ]
-      etc_services__dependent_list:
-        - '{{ checkmk_server__etc_services__dependent_list }}'
-      when: checkmk_server__multisite_livestatus|d()
+      etc_services__dependent_list: '{{ checkmk_server__etc_services__dependent_list }}'
 
     - role: debops.ferm
       tags: [ 'role::ferm' ]
       ferm__dependent_rules:
-        - '{{ checkmk_server__ferm_dependent_rules }}'
+        - '{{ apache__ferm__dependent_rules }}'
+        - '{{ checkmk_server__ferm__dependent_rules }}'
+
+    - role: debops.apache
+      tags: [ 'role::apache' ]
+      apache__dependent_snippets: '{{ checkmk_server__apache__dependent_snippets }}'
+      apache__dependent_vhosts: '{{ checkmk_server__apache__dependent_vhosts }}'
+
+    - role: debops.users
+      tags: [ 'role::users' ]
+      users__dependent_accounts: '{{ checkmk_server__users__dependent_accounts }}'
 
     - role: debops-contrib.checkmk_server
       tags: [ 'role::checkmk_server' ]

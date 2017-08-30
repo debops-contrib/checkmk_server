@@ -1,0 +1,24 @@
+---
+
+- name: Manage SSH keys for monitoring and site synchronization
+  include: ssh_keys.yml
+  with_items: '{{ checkmk_server__sites }}'
+  loop_control:
+    loop_var: site_item
+
+- name: Update facts with SSH key
+  include: ssh_fact.yml
+  with_items: '{{ ansible_local.checkmk_server.values() }}'
+  loop_control:
+    loop_var: site_item
+  tags: [ 'role::checkmk_server:facts' ]
+
+- name: Re-read local facts
+  action: setup
+  tags: [ 'role::checkmk_server:facts' ]
+
+- name: Setup SSH public key login on slave sites
+  include: ssh_login.yml
+  with_items: '{{ checkmk_server__sites }}'
+  loop_control:
+    loop_var: site_item

@@ -1,0 +1,81 @@
+---
+- name: Check that involved distributed sites servers are play hosts
+  assert:
+    that: checkmk_server__sites | map(attribute="delegate_to") | list | issubset(play_hosts)
+    msg: 'Make sure that playbook is run on all servers included in distributed sites. Not doing so might result in wrong variable defaults.'
+
+- name: Install prerequisite packages
+  apt:
+    name: '{{ item }}'
+    state: present
+  with_items: '{{ checkmk_server__prerequisite_packages }}'
+
+- name: Check check-mk-raw package version
+  shell: dpkg-query -W -f='${Version}\n' check-mk-raw-{{ checkmk_server__version }} | cut -d- -f1
+  register: checkmk_server__register_version
+  changed_when: False
+  failed_when: False
+  check_mode: no
+
+- name: Download Check_MK RAW package
+  get_url:
+    url: '{{ checkmk_server__raw_package }}'
+    dest: '/var/cache/apt/archives/{{ checkmk_server__raw_package | basename }}'
+  register: checkmk_server__register_download
+  when: (not checkmk_server__register_version.stdout) and
+        (checkmk_server__raw_package | match('^http'))
+
+- name: Install local Check_MK RAW package
+  apt:
+    deb: '{{ "/var/cache/apt/archives/" + (checkmk_server__raw_package | basename)
+             if (not checkmk_server__register_download | skipped)
+             else checkmk_server__raw_package }}'
+    state: present
+  register: checkmk_server__register_deb_install
+  when: (not checkmk_server__register_version.stdout) and
+        ((checkmk_server__raw_package | splitext)[1] == '.deb')
+
+- name: Install Check_MK RAW package from repository
+  apt:
+    name: '{{ checkmk_server__raw_package }}'
+    state: present
+  register: checkmk_server__register_apt_install
+  when: (not checkmk_server__register_version.stdout) and
+        (not checkmk_server__register_deb_install|d())
+
+- name: Apply patches
+  patch:
+    src: '{{ item.patch }}'
+    dest: '{{ item.file }}'
+    basedir: '/'
+  with_items: '{{ checkmk_server__patches }}'
+  when: (checkmk_server__register_apt_install | changed) or
+        (checkmk_server__register_deb_install | changed)
+
+- name: Get Check_MK default version
+  stat:
+    path: '/omd/versions/default'
+  register: checkmk_server__register_default
+  check_mode: no
+
+- name: Set new default version
+  command: omd setversion '{{ checkmk_server__version }}{{ checkmk_server__version_suffix }}'
+  when: (checkmk_server__register_default.stat.lnk_source |
+         basename) != (checkmk_server__version + checkmk_server__version_suffix)
+
+- name: Create Check_MK sites
+  include: create_sites.yml
+  with_items: '{{ checkmk_server__sites }}'
+  loop_control:
+    loop_var: site_item
+
+- name: Set site facts
+  include: facts.yml
+  with_items: '{{ checkmk_server__sites }}'
+  loop_control:
+    loop_var: site_item
+  tags: [ 'role::checkmk_server:facts' ]
+
+- name: Re-read local facts
+  action: setup
+  tags: [ 'role::checkmk_server:facts' ]
