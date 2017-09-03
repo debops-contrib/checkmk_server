@@ -6,7 +6,7 @@
   stat:
     path: '/omd/versions/default'
   register: checkmk_server_register_default
-  always_run: True
+  check_mode: no
 
 - name: Set new default version
   command: omd setversion '{{ checkmk_server__version_label }}'
@@ -23,13 +23,13 @@
   command: omd version '{{ checkmk_server__site }}'
   register: checkmk_server_register_site_version
   changed_when: False
-  always_run: True
+  check_mode: no
   ignore_errors: '{{ ansible_check_mode }}'
 
 - name: Trigger site version update
   set_fact:
     checkmk_server__fact_update: True
-  always_run: True
+  check_mode: no
   ignore_errors: '{{ ansible_check_mode }}'
   when: checkmk_server__site_update|bool and
         ((checkmk_server_register_site_version.stdout.split(" ")[-1] | splitext)[0] |
@@ -53,7 +53,7 @@
   with_items: '{{ checkmk_server__omd_config }}'
   register: checkmk_server__register_omd_config
   changed_when: False
-  always_run: True
+  check_mode: no
   ignore_errors: '{{ ansible_check_mode }}'
 
 - name: Shutdown Check_MK site (if required)

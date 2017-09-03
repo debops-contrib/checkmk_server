@@ -11,7 +11,7 @@
   command: 'sed -e "1,/^multisite_users\s*=/d" {{ checkmk_server__site_home }}/{{ checkmk_server__multisite_config_path }}/wato/users.mk'
   register: checkmk_server__register_users_mk
   changed_when: False
-  always_run: True
+  check_mode: no
   ignore_errors: '{{ ansible_check_mode }}'
   tags: [ 'role::checkmk_server:multisite' ]
 
@@ -19,7 +19,7 @@
   command: 'sed -e "1,/^contacts.update(/d" -e "$d" {{ checkmk_server__site_home }}/{{ checkmk_server__site_config_path }}/wato/contacts.mk'
   register: checkmk_server__register_contacts_mk
   changed_when: False
-  always_run: True
+  check_mode: no
   ignore_errors: '{{ ansible_check_mode }}'
   tags: [ 'role::checkmk_server:multisite' ]
 
@@ -31,7 +31,7 @@
     checkmk_server__fact_local_contacts: '{{ checkmk_server__register_contacts_mk.stdout
                                              if checkmk_server__register_contacts_mk.stdout|length > 0
                                              else {} }}'
-  always_run: True
+  check_mode: no
   tags: [ 'role::checkmk_server:multisite' ]
 
 

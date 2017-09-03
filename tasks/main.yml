@@ -12,7 +12,7 @@
   register: checkmk_server_register_version
   changed_when: False
   failed_when: False
-  always_run: True
+  check_mode: yes
 
 - name: Download Check_MK RAW package
   get_url:
@@ -66,7 +66,7 @@
     path: '/etc/apache2/mods-enabled/headers.load'
   register: checkmk_server_register_mod_headers
   changed_when: False
-  always_run: True
+  check_mode: yes
 
 - name: Enable apache2 mod_headers
   command: 'a2enmod headers'
@@ -78,7 +78,7 @@
     path: '/etc/apache2/mods-enabled/ssl.load'
   register: checkmk_server_register_mod_ssl
   changed_when: False
-  always_run: True
+  check_mode: yes
 
 - name: Enable apache2 mod_ssl
   command: '{{ item }}'
